@@ -9,7 +9,7 @@ const db = new sqlite.Database('exams.db', (err) => {
 
 exports.getAllCourses = function() {
   return new Promise((resolve, reject) => {
-    const sql = ' SELECT * FROM course';
+    const sql = 'SELECT * FROM course';
     db.all(sql, (err, rows) => {
       if (err) {
         reject(err);
