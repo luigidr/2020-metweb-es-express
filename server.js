@@ -1,19 +1,17 @@
-// import
+// imports
 const express = require('express');
-const morgan = require('morgan');
-
-const sqlite = require('sqlite3');
+const morgan = require('morgan'); // logging middleware
+const {check, validationResult} = require('express-validator'); // validation middleware
+const dao = require('./dao.js');
 
 // init
 const app = express();
 const port = 3000;
 
-const db = new sqlite.Database('exams.db', (err) => console.error(err) );
-
 // set up the middleware
 app.use(morgan('tiny'));
 
-// every requests body will be considered in JSON format
+// every requests body will be considered as in JSON format
 app.use(express.json());
 
 // === REST API (course, exam) === //
@@ -23,22 +21,9 @@ app.use(express.json());
 // Request body: empty
 // Response body: array of objects representing all the courses
 app.get('/courses', (req, res) => {
-    // read from database all the courses
-    const sql = 'SELECT * FROM course';
-    db.all(sql, (err, rows) => {
-        if(err)
-            throw err;
-
-        const courses = rows.map((row) => ({
-            code: row.code,
-            name: row.name,
-            credits: row.CFU
-        }) );
-        // ANOTHER EXAMPLE: const courses = rows.map((row) => (row.code));
-
-        // finally, provide a response in JSON
-        res.json(courses);
-    });
+  dao.getAllCourses()
+  .then((courses) => res.json(courses))
+  .catch(() => res.status(500).end());
 });
 
 
@@ -47,47 +32,43 @@ app.get('/courses', (req, res) => {
 // Request body: empty
 // Example: GET /courses/MF0158
 // Response body: { "code": "MF0158", "name": "Basi di dati e sistemi informativi", "CFU": 9 }
-// Error: 404, {"error": "Il corso non esiste"}
+// Error: 404, {"error": "Course not found."}
 app.get('/courses/:code', (req, res) => {
-    const courseCode = req.params.code;
-    const sql = 'SELECT * FROM course WHERE code=?';
+  dao.getCourseByCode(req.params.code)
+  .then((course) => res.json(course))
+  .catch((error) => res.status(404).json(error));
+});
 
-    db.get(sql, [courseCode], (err, row) => {
-        if(err)
-            throw err;
-        if(row) {
-            res.json({code: row.code, name: row.name, credits: row.CFU});
-        }
-        else {
-            // the selected course does not exist
-            res.status(404).json({error: 'Il corso non esiste'});
-        }
-    });
+// GET /exams
+// Get all the exams
+app.get('/exams', (req, res) => {
+  dao.getAllExams()
+  .then((exams) => res.json(exams))
+  .catch(() => res.status(500).end());
 });
 
 // POST /exams
 // Create a new exam
-// Request body: { "code": "MF0158", "score": "30", "date": "2020-02-16" }
-// No response body
-app.post('/exams', (req, res) => {
-    const code = req.body.code;
-    const score = req.body.score;
-    const date = req.body.date;
+// Request body: { "code": "MF0162", "score": 30, "date": "2020-05-15" }
+// Response body: empty (but set the relative path of the new item in the location header)
+app.post('/exams', [
+  check('score').isInt({min: 18, max: 30}),
+  check('code').isLength({min: 5, max: 6}),
+], (req, res) => {
+  const errors = validationResult(req);
+  if(!errors.isEmpty()) {
+    return res.status(422).json({errors: errors.array()});
+  }
 
-    const sql = 'INSERT INTO exam(course_code, date, score) VALUES(?, DATE(?), ?)';
-
-    db.run(sql, [code, date, score], (err) => {
-        if(err)
-            throw err;
-        
-        res.end();
-    });
-
+  const exam = {
+    code: req.body.code,
+    score: req.body.score,
+    date: req.body.date,
+  };
+  dao.createExam(exam)
+  .then((result) => res.status(201).header('Location', `/exams/${result}`).end())
+  .catch((err) => res.status(503).json({ error: 'Database error during the creation'}));
 });
-
-
-// GET /exams
-// Get all the exams
 
 
 // activate the server
